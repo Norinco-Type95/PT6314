@@ -29,28 +29,25 @@ void PT6314::init(uint8_t sck, uint8_t stb, uint8_t si)
     _displayfunction = VFD_FUNCTIONSET | VFD_8BITMODE | VFD_1LINE | VFD_BRT_100;
 }
 
-void PT6314::begin(uint8_t cols, uint8_t rows)
+void PT6314::begin(uint8_t cols, uint8_t lines)
 {
-    _numlines = rows;
-    if (_numlines > 1)
-    {
-        _displayfunction |= VFD_2LINE;
+    // 根据传入的行数参数动态修改模式位
+    if (lines > 1) {
+        _displayfunction |= VFD_2LINE; // 强制开启 2 行模式 (N=1)
+    } else {
+        _displayfunction &= ~VFD_2LINE; // 设为 1 行模式 (N=0)
     }
 
-    _displaycontrol = VFD_DISPLAYCONTROL | VFD_DISPLAYON | VFD_CURSOROFF | VFD_BLINKOFF;
-
+    // 执行硬件初始化序列
+    delay(50); 
+    send(COMMAND, _displayfunction); // 发送 Function Set
+    
+    _displaycontrol = VFD_DISPLAYON | VFD_CURSOROFF | VFD_BLINKOFF;
+    display(); // 开启显示
+    clear();   // 清屏
+    
     _displaymode = VFD_ENTRYMODESET | VFD_INCREMENT | VFD_CURSORSHIFTENABLED;
-
-    delayMicroseconds(50000);
-
-    send(COMMAND, VFD_CLEARDISPLAY);
-    delayMicroseconds(2000);
-    send(COMMAND, _displaycontrol);
-    delayMicroseconds(4500);
-    send(COMMAND, _displaymode);
-    delayMicroseconds(4500);
-    send(COMMAND, _displayfunction);
-    delayMicroseconds(4500);
+    send(COMMAND, _displaymode); // 设置进入模式
 }
 
 // Sends to the PT6314 2 bytes:
@@ -165,31 +162,28 @@ void PT6314::setCursor(uint8_t col, uint8_t row)
 // PT6314 have 4 brightness levels
 void PT6314::setBrightness(uint8_t brt)
 {
+    // 1. 核心修复：清除低 2 位亮度位 (0x03)，并确保不改动 VFD_2LINE 等关键位
+    _displayfunction &= ~0x03; 
+
+    // 2. 根据百分比设置新位
     switch (brt)
     {
-    case 100:
-        _displayfunction |= VFD_BRT_100;
-        break;
-    case 75:
-        _displayfunction |= VFD_BRT_75;
-        break;
-    case 50:
-        _displayfunction |= VFD_BRT_50;
-        break;
-    case 25:
-        _displayfunction |= VFD_BRT_25;
-        break;
+        case 100: _displayfunction |= VFD_BRT_100; break;
+        case 75:  _displayfunction |= VFD_BRT_75;  break;
+        case 50:  _displayfunction |= VFD_BRT_50;  break;
+        case 25:  _displayfunction |= VFD_BRT_25;  break;
+        default:  _displayfunction |= VFD_BRT_100; break;
     }
+
+    // 3. 发送包含正确 N (行数) 位的完整指令
     send(COMMAND, _displayfunction);
 }
-
 // Write raw data
 inline size_t PT6314::write(uint8_t value)
 {
     send(DATA, value);
     return 1; // assume sucess
 }
-
 // Allows us to fill the first 8 CGRAM locations
 // with custom characters.
 // Note - in some displays, there are only 7 rows. 
